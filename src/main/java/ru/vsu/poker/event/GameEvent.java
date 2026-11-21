@@ -1,6 +1,7 @@
 package ru.vsu.poker.event;
 
 import java.util.List;
+import ru.vsu.poker.action.Action;
 import ru.vsu.poker.card.Card;
 
 /**
@@ -44,6 +45,30 @@ public sealed interface GameEvent {
     record HoleCardsDealt(int seat, List<Card> cards) implements GameEvent {
         public HoleCardsDealt {
             cards = List.copyOf(cards);
+        }
+    }
+
+    /**
+     * Игрок сделал ход.
+     *
+     * @param seat   место игрока
+     * @param action действие
+     * @param paid   сколько фишек он при этом внёс в банк
+     */
+    record PlayerActed(int seat, Action action, int paid) implements GameEvent {
+    }
+
+    /**
+     * Открыты общие карты нового круга.
+     *
+     * @param phase    название фазы («Флоп», «Тёрн», «Ривер»)
+     * @param newCards только что открытые карты
+     * @param board    все общие карты на столе
+     */
+    record BoardDealt(String phase, List<Card> newCards, List<Card> board) implements GameEvent {
+        public BoardDealt {
+            newCards = List.copyOf(newCards);
+            board = List.copyOf(board);
         }
     }
 }

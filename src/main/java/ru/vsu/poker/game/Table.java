@@ -5,10 +5,14 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
+import ru.vsu.poker.action.Action;
 import ru.vsu.poker.card.Card;
 import ru.vsu.poker.card.Deck;
 import ru.vsu.poker.event.GameEvent;
 import ru.vsu.poker.event.GameEvent.BlindKind;
+import ru.vsu.poker.phase.HandPhase;
+import ru.vsu.poker.phase.PreFlopPhase;
+import ru.vsu.poker.phase.ShowdownPhase;
 
 /**
  * Стол для игры в техасский холдем. Хранит игроков, кнопку, колоду и общие карты.
@@ -24,6 +28,8 @@ public final class Table {
     private final List<Player> inHandFromButton = new ArrayList<>();
     private List<Position> layout = List.of();
     private Deck deck;
+    private HandPhase phase;
+    private BettingRound round;
     private int button = -1;
     private int handNumber = 0;
 
@@ -106,7 +112,86 @@ public final class Table {
         for (Player p : dealingOrder) {
             events.add(new GameEvent.HoleCardsDealt(p.seat(), p.holeCards()));
         }
+
+        // Начинается префлоп: ставку нужно уравнять до большого блайнда
+        phase = new PreFlopPhase();
+        round = new BettingRound(orderFrom(phase.firstToActIndex(inHandFromButton.size())),
+                blinds.bigBlind(), blinds.bigBlind());
+        events.addAll(settle());
         return List.copyOf(events);
+    }
+
+    /**
+     * Выполняет действие игрока, чей сейчас ход, и продвигает раздачу: если круг торговли закончился,
+     * открывает следующие карты и начинает новый круг. Если остался один игрок или торговаться больше
+     * не с кем, раздача доходит до вскрытия.
+     *
+     * @param action действие
+     * @return события: ход игрока, открытые карты и т. д.
+     * @throws ru.vsu.poker.action.IllegalActionException если действие нарушает правила (состояние не меняется)
+     * @throws IllegalStateException                      если раздача не идёт
+     */
+    public List<GameEvent> act(Action action) {
+        Objects.requireNonNull(action, "action");
+        requireHandInProgress();
+        List<GameEvent> events = new ArrayList<>(round.apply(round.currentPlayer(), action));
+        events.addAll(settle());
+        return List.copyOf(events);
+    }
+
+    /**
+     * Переводит раздачу вперёд, пока торговля не потребует хода игрока. Круг, в котором торговаться
+     * не с кем (все поставили всё), проходится сразу: общие карты открываются до конца.
+     */
+    private List<GameEvent> settle() {
+        List<GameEvent> events = new ArrayList<>();
+        while (!(phase instanceof ShowdownPhase)) {
+            if (liveCount() == 1) {
+                phase = new ShowdownPhase(); // все остальные сбросили карты
+                break;
+            }
+            if (!round.isComplete()) {
+                return events;
+            }
+            phase = phase.next();
+            if (phase instanceof ShowdownPhase) {
+                break;
+            }
+            List<Card> dealt = new ArrayList<>();
+            for (int i = 0; i < phase.boardCardsToDeal(); i++) {
+                dealt.add(deck.draw());
+            }
+            community.addAll(dealt);
+            events.add(new GameEvent.BoardDealt(phase.name(), dealt, community));
+            players.forEach(Player::startBettingRound);
+            round = new BettingRound(orderFrom(phase.firstToActIndex(inHandFromButton.size())),
+                    0, blinds.bigBlind());
+        }
+        events.addAll(onShowdown());
+        return events;
+    }
+
+    /** Вскрытие. Определение победителей и выдача банков добавляются отдельным шагом. */
+    private List<GameEvent> onShowdown() {
+        return List.of();
+    }
+
+    /** @return игроки раздачи в порядке хода: список от кнопки, повёрнутый так, что первым стоит {@code index}-й */
+    private List<Player> orderFrom(int index) {
+        List<Player> order = new ArrayList<>(inHandFromButton);
+        Collections.rotate(order, -index);
+        return order;
+    }
+
+    /** @return сколько игроков раздачи ещё не сбросили карты */
+    private int liveCount() {
+        return (int) inHandFromButton.stream().filter(p -> !p.isFolded()).count();
+    }
+
+    private void requireHandInProgress() {
+        if (phase == null || phase instanceof ShowdownPhase) {
+            throw new IllegalStateException("Раздача не идёт");
+        }
     }
 
     /** Ищет следующее после {@code from} место с фишками (по кругу). */
@@ -145,7 +230,54 @@ public final class Table {
         return Collections.unmodifiableList(inHandFromButton);
     }
 
-    /** @return общие карты (пока пусто) */
+    /**
+     * @return игрок, чей сейчас ход
+     * @throws IllegalStateException если раздача не идёт
+     */
+    public Player currentPlayer() {
+        requireHandInProgress();
+        return round.currentPlayer();
+    }
+
+    /**
+     * @param player игрок
+     * @return сколько фишек ему нужно доплатить, чтобы уравнять ставку круга
+     * @throws IllegalStateException если раздача не идёт
+     */
+    public int amountToCall(Player player) {
+        requireHandInProgress();
+        return round.amountToCall(player);
+    }
+
+    /**
+     * @return минимальный размер ставки, до которого сейчас можно повысить
+     * @throws IllegalStateException если раздача не идёт
+     */
+    public int minRaiseTo() {
+        requireHandInProgress();
+        return round.minRaiseTo();
+    }
+
+    /**
+     * @return ставка, которую нужно уравнять в текущем круге
+     * @throws IllegalStateException если раздача не идёт
+     */
+    public int currentBet() {
+        requireHandInProgress();
+        return round.currentBet();
+    }
+
+    /** @return текущая фаза раздачи или null, если раздача ещё не начиналась */
+    public HandPhase phase() {
+        return phase;
+    }
+
+    /** @return true, если раздача дошла до вскрытия (торговля закончена) */
+    public boolean isHandOver() {
+        return phase instanceof ShowdownPhase;
+    }
+
+    /** @return общие карты на столе (0, 3, 4 или 5) */
     public List<Card> community() {
         return Collections.unmodifiableList(community);
     }

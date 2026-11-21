@@ -15,6 +15,7 @@ public final class Player {
     private final String name;
     private int stack;
     private int contributed;
+    private int roundBet;
     private boolean folded;
     private boolean inHand;
     private final List<Card> holeCards = new ArrayList<>(2);
@@ -58,6 +59,11 @@ public final class Player {
         return contributed;
     }
 
+    /** @return сколько фишек игрок вложил в текущем круге торговли */
+    public int roundBet() {
+        return roundBet;
+    }
+
     /** @return true, если игрок сбросил карты */
     public boolean isFolded() {
         return folded;
@@ -92,6 +98,7 @@ public final class Player {
         int paid = Math.min(amount, stack);
         stack -= paid;
         contributed += paid;
+        roundBet += paid;
         return paid;
     }
 
@@ -129,8 +136,14 @@ public final class Player {
     void startHand() {
         holeCards.clear();
         contributed = 0;
+        roundBet = 0;
         folded = false;
         inHand = stack > 0;
+    }
+
+    /** Обнуляет ставку круга: вызывается при переходе к следующему кругу торговли. */
+    void startBettingRound() {
+        roundBet = 0;
     }
 
     @Override
