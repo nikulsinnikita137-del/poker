@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import ru.vsu.poker.action.Action;
 import ru.vsu.poker.card.Card;
 import ru.vsu.poker.card.Deck;
 import ru.vsu.poker.event.GameEvent;
@@ -24,6 +25,13 @@ class TableStartHandTest {
             players.add(new Player(i, "P" + i, stacks[i]));
         }
         return new Table(players, BLINDS, new Random(seed));
+    }
+
+    /** Доигрывает раздачу: все по очереди сбрасывают карты, банк забирает последний. */
+    private static void foldOut(Table t) {
+        while (!t.isHandOver()) {
+            t.act(new Action.Fold());
+        }
     }
 
     @Test
@@ -72,14 +80,13 @@ class TableStartHandTest {
     @Test
     void buttonMovesClockwiseEachHand() {
         Table t = table(1, 1000, 1000, 1000);
-        t.startHand();
-        assertEquals(0, t.button());
-        t.startHand();
-        assertEquals(1, t.button());
-        t.startHand();
-        assertEquals(2, t.button());
-        t.startHand();
-        assertEquals(0, t.button());
+        List<Integer> buttons = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            t.startHand();
+            buttons.add(t.button());
+            foldOut(t);
+        }
+        assertEquals(List.of(0, 1, 2, 0), buttons);
         assertEquals(4, t.handNumber());
     }
 
@@ -87,6 +94,7 @@ class TableStartHandTest {
     void buttonSkipsPlayersWithoutChips() {
         Table t = table(1, 1000, 0, 1000);
         t.startHand();
+        foldOut(t);
         t.startHand();
         assertEquals(2, t.button());
         assertFalse(t.players().get(1).isInHand());
@@ -177,7 +185,8 @@ class TableStartHandTest {
     void chipsAreConservedAndSecondHandResetsState() {
         Table t = table(5, 500, 700, 900);
         t.startHand();
-        t.players().get(0).win(t.pot()); // банк первой раздачи выдан (вскрытие появится позже)
+        foldOut(t);
+        assertEquals(2100, t.players().stream().mapToInt(Player::stack).sum(), "банк выдан победителю");
         t.startHand();
         int total = t.players().stream().mapToInt(Player::stack).sum() + t.pot();
         assertEquals(2100, total);
@@ -192,6 +201,7 @@ class TableStartHandTest {
         try {
             Table t = table(3, 1000, 1000, 1000, 1000);
             t.startHand();
+            foldOut(t);
             t.startHand();
         } finally {
             System.setOut(original);

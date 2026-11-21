@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
+import java.util.function.Supplier;
 import ru.vsu.poker.action.Action;
 import ru.vsu.poker.card.Card;
 import ru.vsu.poker.card.Deck;
@@ -23,7 +24,7 @@ import ru.vsu.poker.phase.ShowdownPhase;
 public final class Table {
     private final List<Player> players;
     private final Blinds blinds;
-    private final Random random;
+    private final Supplier<Deck> deckSource;
     private final List<Card> community = new ArrayList<>(5);
     private final List<Player> inHandFromButton = new ArrayList<>();
     private List<Position> layout = List.of();
@@ -42,6 +43,23 @@ public final class Table {
      * @throws IllegalArgumentException если игроков меньше двух или больше десяти либо места не по порядку
      */
     public Table(List<Player> players, Blinds blinds, Random random) {
+        this(players, blinds, shuffledDecks(random));
+    }
+
+    private static Supplier<Deck> shuffledDecks(Random random) {
+        Objects.requireNonNull(random, "random");
+        return () -> new Deck(random);
+    }
+
+    /**
+     * Создаёт стол с произвольным источником колод. Нужен тестам: колода с заданным порядком карт
+     * позволяет разыграть раздачу с известными руками.
+     *
+     * @param players  игроки; место каждого должно совпадать с его индексом в списке
+     * @param blinds   размеры блайндов
+     * @param deckSource поставляет новую колоду на каждую раздачу
+     */
+    public Table(List<Player> players, Blinds blinds, Supplier<Deck> deckSource) {
         if (players.size() < Position.MIN_PLAYERS || players.size() > Position.MAX_PLAYERS) {
             throw new IllegalArgumentException("За столом должно быть от " + Position.MIN_PLAYERS
                     + " до " + Position.MAX_PLAYERS + " игроков: " + players.size());
@@ -54,19 +72,20 @@ public final class Table {
         }
         this.players = List.copyOf(players);
         this.blinds = Objects.requireNonNull(blinds, "blinds");
-        this.random = Objects.requireNonNull(random, "random");
+        this.deckSource = Objects.requireNonNull(deckSource, "deckSource");
     }
 
     /**
      * Начинает новую раздачу: двигает кнопку, ставит блайнды, раздаёт по две карты.
      * Игроки без фишек в раздаче не участвуют, кнопка их перепрыгивает.
-     * Банк предыдущей раздачи к этому моменту должен быть выдан победителям
-     * (вскрытие добавляется отдельным шагом): вклады обнуляются.
      *
      * @return события раздачи по порядку
-     * @throws IllegalStateException если фишки есть меньше чем у двух игроков
+     * @throws IllegalStateException если предыдущая раздача не закончена или фишки есть меньше чем у двух игроков
      */
     public List<GameEvent> startHand() {
+        if (phase != null && !(phase instanceof ShowdownPhase)) {
+            throw new IllegalStateException("Предыдущая раздача ещё не закончена");
+        }
         long funded = players.stream().filter(p -> p.stack() > 0).count();
         if (funded < Position.MIN_PLAYERS) {
             throw new IllegalStateException("Для раздачи нужно минимум два игрока с фишками");
@@ -76,7 +95,7 @@ public final class Table {
         button = nextFundedSeat(button);
         players.forEach(Player::startHand);
         community.clear();
-        deck = new Deck(random);
+        deck = deckSource.get();
 
         // Игроки раздачи, начиная с кнопки по часовой стрелке
         inHandFromButton.clear();
@@ -171,9 +190,11 @@ public final class Table {
         return events;
     }
 
-    /** Вскрытие. Определение победителей и выдача банков добавляются отдельным шагом. */
+    /** Вскрытие: определяет победителей, выдаёт банки и завершает раздачу. */
     private List<GameEvent> onShowdown() {
-        return List.of();
+        List<GameEvent> events = new ArrayList<>(HandResolver.resolve(players, inHandFromButton, community, button));
+        events.add(new GameEvent.HandFinished(handNumber));
+        return events;
     }
 
     /** @return игроки раздачи в порядке хода: список от кнопки, повёрнутый так, что первым стоит {@code index}-й */
@@ -272,7 +293,7 @@ public final class Table {
         return phase;
     }
 
-    /** @return true, если раздача дошла до вскрытия (торговля закончена) */
+    /** @return true, если раздача закончена: вскрытие прошло и банки выданы */
     public boolean isHandOver() {
         return phase instanceof ShowdownPhase;
     }
@@ -297,7 +318,7 @@ public final class Table {
         return handNumber;
     }
 
-    /** @return сколько фишек сейчас в банке (сумма вкладов всех игроков раздачи) */
+    /** @return сумма вкладов всех игроков в текущую раздачу (после её окончания банки уже выданы) */
     public int pot() {
         return players.stream().mapToInt(Player::contributed).sum();
     }

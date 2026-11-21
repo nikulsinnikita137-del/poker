@@ -3,6 +3,7 @@ package ru.vsu.poker.event;
 import java.util.List;
 import ru.vsu.poker.action.Action;
 import ru.vsu.poker.card.Card;
+import ru.vsu.poker.eval.HandCategory;
 
 /**
  * События партии. Механика возвращает их списком, а вывод (консоль, лог, тесты) решает, что с ними делать.
@@ -70,5 +71,39 @@ public sealed interface GameEvent {
             newCards = List.copyOf(newCards);
             board = List.copyOf(board);
         }
+    }
+
+    /**
+     * Игрок открыл карты на вскрытии.
+     *
+     * @param seat      место игрока
+     * @param holeCards его карманные карты
+     * @param category  собранная комбинация
+     * @param bestFive  пять карт комбинации
+     */
+    record ShowdownReveal(int seat, List<Card> holeCards, HandCategory category, List<Card> bestFive)
+            implements GameEvent {
+        public ShowdownReveal {
+            holeCards = List.copyOf(holeCards);
+            bestFive = List.copyOf(bestFive);
+        }
+    }
+
+    /**
+     * Игрок получил долю банка. Банк с единственным претендентом — это возврат его неуравненной ставки.
+     *
+     * @param potIndex номер банка (0 — основной, дальше побочные)
+     * @param seat     место игрока
+     * @param amount   сколько фишек получено
+     */
+    record PotAwarded(int potIndex, int seat, int amount) implements GameEvent {
+    }
+
+    /**
+     * Раздача закончена, банки выданы.
+     *
+     * @param handNumber номер раздачи
+     */
+    record HandFinished(int handNumber) implements GameEvent {
     }
 }
