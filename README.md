@@ -15,6 +15,9 @@
 | `game` | `Player`, `Blinds`, `Position`, `Table` (кнопка, блайнды, раздача, ходы), `BettingRound` (правила ставок), `HandResolver` (вскрытие и выдача банков) |
 | `action` | `Action` (fold, check, call, raise, all-in), `IllegalActionException` |
 | `phase` | `HandPhase` и фазы `PreFlopPhase`, `FlopPhase`, `TurnPhase`, `RiverPhase`, `ShowdownPhase` — паттерн «Состояние» |
+| `bot` | `Bot`, `CallingStationBot`, `RandomBot` (общий `Random` с колодой) |
+| `sim` | `GameRunner` — прогон раздач, ходы ботов, события слушателю |
+| `console` | `ConsoleApp` (точка входа), `EventFormatter` (журнал по-русски), `HumanBot` (ввод человека) |
 | `event` | `GameEvent` — события партии; механика их возвращает, а не печатает |
 
 ## Как идёт раздача
@@ -31,9 +34,25 @@
 All-in меньше полного повышения не открывает торговлю заново для тех, кто уже ходил.
 
 ## Запуск
+Тесты:
 ```
 mvn test
 ```
+Консольное приложение (класс `ru.vsu.poker.console.ConsoleApp`). В IntelliJ IDEA: запустить `main`, ключи задаются в
+**Run → Edit Configurations → Program arguments**. Из консоли после `mvn compile`:
+```
+java -cp target/classes ru.vsu.poker.console.ConsoleApp --seed 42 --hands 5
+java -cp target/classes ru.vsu.poker.console.ConsoleApp --human --players 3
+```
+| Ключ | Что делает | По умолчанию |
+|---|---|---|
+| `--seed N` | зерно: одно зерно — одна и та же партия | 42 |
+| `--hands N` | сколько раздач сыграть | 5 |
+| `--players N` | число игроков, 2–9 | 4 |
+| `--stack N` | стартовый стек | 1000 |
+| `--human` | вы играете за место 0 | выключено |
+
+Команды человека: `fold`, `check`/`call` (`c`), `raise N` (`r N`), `allin` (`a`), `help`.
 
 ## Статус
 - [x] Карты, колода с зерном
@@ -42,4 +61,4 @@ mvn test
 - [x] Игроки, блайнды, позиции, раздача карманных карт
 - [x] Круги торговли (паттерн «Состояние»), действия, минимальный рейз
 - [x] Вскрытие, выдача банков, события
-- [ ] Консольное приложение (прогон партии с журналом)
+- [x] Консольное приложение (прогон партии с журналом, боты, игра человека)
